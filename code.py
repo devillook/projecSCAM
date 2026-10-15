@@ -46,8 +46,6 @@ _total = sum(_weights)
 NORMALIZED = [(n, w / _total) for n, w in GUARANTORS]
 NAMES = [n for n, _ in NORMALIZED]
 
-SEARCH_MIN, SEARCH_MAX = 20, 50
-
 PROFANITY_WORDS = [
     "хуй",
     "пизд",
@@ -91,7 +89,7 @@ class IdeaState(StatesGroup):
 def main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🚀 Начать")],
+            [KeyboardButton(text="Отзывы 🖤")],
             [
                 KeyboardButton(text="🔍 Найти гаранта в сети"),
                 KeyboardButton(text="📄 Сделать резюме сделки"),
@@ -128,21 +126,32 @@ async def notify_admin_action(
 # ──────────────────────── HANDLERS ──────────────────────────────
 async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
     await state.clear()
-    await notify_admin_action(bot, message.from_user, "Команда /start или Кнопка Начать")
+    await notify_admin_action(bot, message.from_user, "Команда /start или Кнопка Отзывы / Сброс")
 
     await message.answer(
-        "🕷️ <b>Приветствуем в теневой системе @codcry</b> ;()\n\n"
-        "🌑 <i>Этот бот-заместитель координирует сделки и связывает вас с администрацией без лишнего шума...</i> #\n\n"
+        "🕷️ <b>ЭТОТ БОТ ТВОРЕНИЕ БОЖЬЕ</b>\n\n"
+        "✔️ <b>Заменяет @codcry во всех смыслах</b> ✔️\n\n"
         "—————————————————-\n"
         "🖤 created by @codcry: @jonnkq\n"
         "—————————————————-\n\n"
-        "⚡ <b>Правила строгие. Защита активна.</b>\n\n"
+        "⚡️ <b>Правила строгие. Защита активна.</b>\n\n"
         f"💬 Нужны отзывы? — @{SUPPORT_USERNAME}\n\n"
-        "⚖️ <b>Доступные модули:</b>\n\n"
-        "🔍 <b>Найти гаранта в сети</b> — запуск поиска свободного агента.\n"
-        "📄 <b>Сделать резюме сделки</b> — +50% к ускорению поиска агента.\n"
-        "🛡️ <b>Поддержка</b> — прямой канал с администрацией.\n"
+        "⚖️ <b>Доступные модули:</b>\n"
+        "_________________________________________\n\n"
+        "🔍 <b>Найти гаранта в сети</b> — запуск поиска свободного гаранта.\n\n"
+        "📄 <b>Сделать резюме сделки</b> — +50% к ускорению поиска гаранта.\n\n"
+        "🛡️ <b>Поддержка</b> — прямой канал с администрацией.\n\n"
         "⚙️ <b>In progress...</b> — вектор развития и предложений.\n",
+        parse_mode="HTML",
+        reply_markup=main_kb(),
+    )
+
+
+async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bot):
+    await notify_admin_action(bot, message.from_user, "Нажал кнопку 'Отзывы 🖤'")
+    await message.answer(
+        "🖤 <b>Раздел отзывов в разработке...</b> ;()\n\n"
+        "В будущем эта кнопка будет присылать отзывы по одному клику в виде скринов. Следите за обновлениями! #",
         parse_mode="HTML",
         reply_markup=main_kb(),
     )
@@ -199,7 +208,7 @@ async def process_deal_form(
 
     await message.answer(
         "✅ <b>Резюме зафиксировано! ✔️</b>\n\n"
-        "Теперь при поиске гарантирован приоритетный отклик агентов. 🕷️",
+        "Теперь при поиске гарантирован приоритетный отклик гарантов. 🕷️",
         parse_mode="HTML",
         reply_markup=main_kb(),
     )
@@ -262,24 +271,27 @@ async def cb_cancel_search(call: types.CallbackQuery, bot: Bot):
 
 async def run_guarantor_search(message: types.Message, bot: Bot):
     await notify_admin_action(bot, message.from_user, "Старт процесса поиска в сети")
-    duration = random.randint(SEARCH_MIN, SEARCH_MAX)
-    msg = await message.answer("🤖 <b>Проверка протоколов…</b> ;()", parse_mode="HTML")
+    
+    # Общее время поиска (например, от 15 до 25 секунд)
+    total_duration = random.randint(15, 25)
+    msg = await message.answer("🤖 <b>Инициализация поиска…</b> ;()", parse_mode="HTML")
 
     elapsed = 0
-    step = 4
+    # Быстрый шаг анимации точек (каждую 1 секунду)
+    step = 1
 
-    while elapsed < duration:
+    while elapsed < total_duration:
         await asyncio.sleep(step)
         elapsed += step
 
-        dots = "." * ((elapsed // 2) % 4)
+        dots = "." * ((elapsed % 3) + 1)
 
-        if elapsed <= 8:
-            status_text = f"🤖 <b>Проверка на бота{dots}</b> ;()"
-        elif elapsed <= 24:
-            status_text = f"🌐 <b>Запрос отправлен в сеть гарантов{dots}</b> #"
+        if elapsed <= 3:
+            status_text = f"📄 <b>Проверка резюме{dots}</b> ;()"
+        elif elapsed <= 10:
+            status_text = f"🤖 <b>Проверка на бота{dots}</b> #"
         else:
-            status_text = f"⚖️ <b>Ожидаем отклик свободного агента{dots}</b> 🖤"
+            status_text = f"🌐 <b>Резюме отправлено, гаранты в сети получат уведомление{dots}</b> 🖤"
 
         try:
             await msg.edit_text(status_text, parse_mode="HTML")
@@ -306,7 +318,7 @@ async def run_guarantor_search(message: types.Message, bot: Bot):
 
     await msg.edit_text(
         f"🏴‍☠️ <b>Гарант отозвался</b> — @{name}\n\n"
-        f"<i>Защищенный канал связи готов. Перешлите агенту детали сделки. ;()</i> #",
+        f"<i>Защищенный канал связи готов. Перешлите гаранту детали сделки. ;()</i> #",
         parse_mode="HTML",
         reply_markup=kb,
     )
@@ -360,7 +372,6 @@ async def process_idea_text(message: types.Message, state: FSMContext, bot: Bot)
 
     await state.clear()
 
-    # Отправка идеи админу в ЛС
     admin_msg = (
         f"💡 <b>НОВАЯ ИДЕЯ ДЛЯ БОТА!</b> ;()\n\n"
         f"👤 <b>Автор:</b> {username} (ID: <code>{user.id}</code>)\n\n"
@@ -412,7 +423,7 @@ async def cb_report_guarantor(call: types.CallbackQuery, state: FSMContext, bot:
 
     await call.answer()
     await call.message.answer(
-        "⚠️ <b>Причина? ;()</b>\n\nОпишите суть жалобы на агента одним сообщением: #",
+        "⚠️ <b>Причина? ;()</b>\n\nОпишите суть жалобы на гаранта одним сообщением: #",
         parse_mode="HTML",
     )
 
@@ -444,6 +455,17 @@ async def process_report_reason(
         "✅ <b>Жалоба отправлена.</b> Администрация рассмотрит обращение в ближайшее время. ✔️",
         reply_markup=main_kb(),
     )
+
+
+# ── Обработка случайного текста (перенаправление на /start) ──
+async def handle_random_text(message: types.Message, state: FSMContext, bot: Bot):
+    # Если пользователь находится в каком-то активном состоянии (например, пишет идею или резюме), не перебиваем
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+    
+    # Любой другой случайный текст (например, "дарова", "сделка надо") активирует логику /start
+    await cmd_start(message, state, bot)
 
 
 # ── Фоновый веб-сервер для хостинга (Render) ──
@@ -480,9 +502,9 @@ async def main():
     )
     dp.message.register(process_idea_text, StateFilter(IdeaState.waiting_for_idea))
 
-    # Команды и кнопки
+    # Команды и кнопки меню
     dp.message.register(cmd_start, Command("start"))
-    dp.message.register(cmd_start, F.text == "🚀 Начать")
+    dp.message.register(btn_reviews_handler, F.text == "Отзывы 🖤")
 
     dp.message.register(cmd_guarantor, F.text == "🔍 Найти гаранта в сети")
     dp.message.register(cmd_make_deal, F.text == "📄 Сделать резюме сделки")
@@ -497,6 +519,9 @@ async def main():
     dp.callback_query.register(
         cb_report_guarantor, F.data.startswith("report:")
     )
+
+    # Перехватчик любого другого случайного текста (ставим в самый конец)
+    dp.message.register(handle_random_text, F.text)
 
     await start_web_server()
 
