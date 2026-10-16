@@ -20,6 +20,7 @@ try:
         InlineKeyboardButton,
         InlineKeyboardMarkup,
         KeyboardButton,
+        InputMediaPhoto,
         ReplyKeyboardMarkup,
     )
     from aiohttp import web
@@ -126,7 +127,7 @@ async def notify_admin_action(
 # ──────────────────────── HANDLERS ──────────────────────────────
 async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
     await state.clear()
-    await notify_admin_action(bot, message.from_user, "Команда /start или Кнопка Отзывы / Сброс")
+    await notify_admin_action(bot, message.from_user, "Команда /start или Сброс")
 
     await message.answer(
         "🕷️ <b>ЭТОТ БОТ ТВОРЕНИЕ БОЖЬЕ</b>\n\n"
@@ -148,13 +149,37 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
 
 
 async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bot):
-    await notify_admin_action(bot, message.from_user, "Нажал кнопку 'Отзывы 🖤'")
-    await message.answer(
-        "🖤 <b>Раздел отзывов в разработке...</b> ;()\n\n"
-        "В будущем эта кнопка будет присылать отзывы по одному клику в виде скринов. Следите за обновлениями! #",
-        parse_mode="HTML",
-        reply_markup=main_kb(),
-    )
+    await notify_admin_action(bot, message.from_user, "Запросил отзывы (Отзывы 🖤)")
+    
+    # Список доступных вариантов отправки отзывов (альбомы и одиночные файлы)
+    # Убедись, что файлы с такими именами загружены в корень репозитория GitHub!
+    review_variants = [
+        # Вариант 1: Альбом из нескольких частей (например, rep1_part_1 и rep1_part_2)
+        # Если у тебя больше частей для rep1, добавь их сюда через запятую
+        [
+            InputMediaPhoto(media="rep1_part_1.png", caption="🖤 <b>Реальный отзыв о сделке ;()</b> #"),
+            InputMediaPhoto(media="rep1_part_2.png")
+        ],
+        # Вариант 2: Одиночный файл (например, rep6)
+        "rep6.png" # Если расширение другое (например .jpg), поправь здесь на то, с каким загрузил
+    ]
+    
+    # Выбираем случайный вариант отзыва
+    chosen = random.choice(review_variants)
+    
+    try:
+        if isinstance(chosen, list):
+            # Отправка альбома (группы фото)
+            await message.answer_media_group(media=chosen)
+        else:
+            # Отправка одиночного файла
+            await message.answer_photo(photo=chosen, caption="🖤 <b>Реальный отзыв о сделке ;()</b> #", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Ошибка отправки отзывов: {e}")
+        await message.answer(
+            "⚠️ <b>Файлы отзывов загружаются или временно недоступны на сервере.</b> ;() #",
+            parse_mode="HTML"
+        )
 
 
 # ── Бланк резюме сделки ────────────────────────────────────
@@ -220,7 +245,6 @@ async def cmd_guarantor(message: types.Message, state: FSMContext, bot: Bot):
     user_data = await state.get_data()
     deal_summary = user_data.get("saved_deal_summary")
 
-    # Если резюме НЕТ — тормозим поиск и требуем выбор
     if not deal_summary:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -245,7 +269,6 @@ async def cmd_guarantor(message: types.Message, state: FSMContext, bot: Bot):
         )
         return
 
-    # Если резюме ЕСТЬ — запускаем процесс поиска
     await run_guarantor_search(message, bot)
 
 
@@ -272,12 +295,10 @@ async def cb_cancel_search(call: types.CallbackQuery, bot: Bot):
 async def run_guarantor_search(message: types.Message, bot: Bot):
     await notify_admin_action(bot, message.from_user, "Старт процесса поиска в сети")
     
-    # Общее время поиска (например, от 15 до 25 секунд)
     total_duration = random.randint(15, 25)
     msg = await message.answer("🤖 <b>Инициализация поиска…</b> ;()", parse_mode="HTML")
 
     elapsed = 0
-    # Быстрый шаг анимации точек (каждую 1 секунду)
     step = 1
 
     while elapsed < total_duration:
@@ -457,18 +478,15 @@ async def process_report_reason(
     )
 
 
-# ── Обработка случайного текста (перенаправление на /start) ──
+# ── Перехват случайного текста ───────────────────────────
 async def handle_random_text(message: types.Message, state: FSMContext, bot: Bot):
-    # Если пользователь находится в каком-то активном состоянии (например, пишет идею или резюме), не перебиваем
     current_state = await state.get_state()
     if current_state is not None:
         return
-    
-    # Любой другой случайный текст (например, "дарова", "сделка надо") активирует логику /start
     await cmd_start(message, state, bot)
 
 
-# ── Фоновый веб-сервер для хостинга (Render) ──
+# ── Веб-сервер для Render ────────────────────────────────
 async def handle_ping(request):
     return web.Response(text="Bot is alive!")
 
@@ -493,7 +511,7 @@ async def main():
     bot = Bot(TG_BOT_TOKEN)
     dp = Dispatcher()
 
-    # Регистрация FSM хэндлеров
+    # FSM
     dp.message.register(
         process_deal_form, StateFilter(DealState.waiting_for_deal_form)
     )
@@ -502,7 +520,7 @@ async def main():
     )
     dp.message.register(process_idea_text, StateFilter(IdeaState.waiting_for_idea))
 
-    # Команды и кнопки меню
+    # Команды и кнопки
     dp.message.register(cmd_start, Command("start"))
     dp.message.register(btn_reviews_handler, F.text == "Отзывы 🖤")
 
@@ -512,7 +530,7 @@ async def main():
     dp.message.register(cmd_in_progress, F.text == "⚙️ In progress... ⛓️")
     dp.message.register(cmd_idea, Command("idea"))
 
-    # Инлайн-кнопки
+    # Инлайн
     dp.callback_query.register(cb_go_make_summary, F.data == "go_make_summary")
     dp.callback_query.register(cb_cancel_search, F.data == "cancel_search")
     dp.callback_query.register(cb_idea_trigger, F.data == "btn_idea_trigger")
@@ -520,7 +538,7 @@ async def main():
         cb_report_guarantor, F.data.startswith("report:")
     )
 
-    # Перехватчик любого другого случайного текста (ставим в самый конец)
+    # Перехват текста
     dp.message.register(handle_random_text, F.text)
 
     await start_web_server()
