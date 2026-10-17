@@ -55,7 +55,7 @@ PROFANITY_WORDS = [
     "твоя", "иди", "соси", "хз", "зачем", "просто", "зач", "нет"
 ]
 
-# Глобальный счетчик для отправки отзывов строго по очереди без повторов
+# Глобальный счетчик для отправки отзывов строго по очереди
 CURRENT_REVIEW_INDEX = 0
 
 
@@ -124,43 +124,63 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
     )
 
 
+def get_all_reviews():
+    """Динамически собирает и группирует все картинки с префиксом rep"""
+    # Удаленный файл rep13 исключен
+    all_files = [f for f in os.listdir('.') if f.startswith('rep') and f.lower().endswith(('.png', '.jpg', '.jpeg')) and 'rep13' not in f]
+    
+    groups = {}
+    for filename in sorted(all_files):
+        # Находим основной номер отзыва (например rep1 из rep1_part1_png.jpg)
+        match = re.match(r"(rep\d+)", filename)
+        if match:
+            group_key = match.group(1)
+            if group_key not in groups:
+                groups[group_key] = []
+            groups[group_key].append(filename)
+        else:
+            groups[filename] = [filename]
+
+    reviews_list = []
+    for group_key in sorted(groups.keys()):
+        files = sorted(groups[group_key])
+        if len(files) > 1:
+            # Если частей несколько — формируем альбом
+            media_group = [
+                InputMediaPhoto(media=FSInputFile(files[0]), caption="🖤 <b>Реальный отзыв о сделке ;()</b> #", parse_mode="HTML")
+            ]
+            for f in files[1:]:
+                media_group.append(InputMediaPhoto(media=FSInputFile(f)))
+            reviews_list.append(media_group)
+        elif len(files) == 1:
+            # Одиночный отзыв
+            reviews_list.append(FSInputFile(files[0]))
+            
+    return reviews_list
+
+
 async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bot):
     global CURRENT_REVIEW_INDEX
     await notify_admin_action(bot, message.from_user, "Запросил отзывы (Отзывы 🖤)")
     
-    # Структура отзывов: каждый элемент списка — это отдельный отзыв.
-    # Он может содержать как один файл, так и несколько частей (альбом).
-    # Здесь прописаны твои группы файлов (rep1 с part1 и part2, а также остальные одиночные файлы).
-    reviews_library = [
-        # Отзыв 1 (состоит из двух частей альбома)
-        [
-            InputMediaPhoto(media=FSInputFile("rep1_part1.png"), caption="🖤 <b>Реальный отзыв о сделке ;()</b> #"),
-            InputMediaPhoto(media=FSInputFile("rep1_part2.png"))
-        ],
-        # Остальные одиночные отзывы (проверь расширения .jpg или .png и поправь при необходимости)
-        FSInputFile("rep5.jpg"),
-        FSInputFile("rep6.jpg"),
-        FSInputFile("rep7.jpg"),
-        FSInputFile("rep8.jpg"),
-        FSInputFile("rep9.jpg"),
-        FSInputFile("rep10.jpg"),
-        FSInputFile("rep11.jpg"),
-        FSInputFile("rep12.jpg"),
-        FSInputFile("rep13.jpg"),
-    ]
+    reviews_library = get_all_reviews()
     
+    if not reviews_library:
+        await message.answer("⚠️ <b>Отзывы пока недоступны.</b> ;() #", parse_mode="HTML")
+        return
+
     # Берем текущий отзыв по индексу
-    current_review = reviews_library[CURRENT_REVIEW_INDEX]
+    current_review = reviews_library[CURRENT_REVIEW_INDEX % len(reviews_library)]
     
-    # Перемещаем указатель на следующий отзыв по кругу (когда дойдет до конца, начнется сначала)
+    # Переходим к следующему отзыву по очереди
     CURRENT_REVIEW_INDEX = (CURRENT_REVIEW_INDEX + 1) % len(reviews_library)
     
     try:
         if isinstance(current_review, list):
-            # Отправка альбома (несколько частей разом)
+            # Отправка альбомом (все части part)
             await message.answer_media_group(media=current_review)
         else:
-            # Отправка одиночного файла
+            # Отправка одиночного фото
             await message.answer_photo(
                 photo=current_review,
                 caption="🖤 <b>Реальный отзыв о работе гаранта ;()</b> #",
@@ -168,10 +188,7 @@ async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bo
             )
     except Exception as e:
         logging.error(f"Ошибка отправки отзыва: {e}")
-        await message.answer(
-            "⚠️ <b>Файл отзыва временно недоступен на сервере.</b> ;() #",
-            parse_mode="HTML"
-        )
+        await message.answer("⚠️ <b>Не удалось загрузить данный отзыв.</b> ;() #", parse_mode="HTML")
 
 
 async def cmd_make_deal(message: types.Message, state: FSMContext, bot: Bot):
