@@ -1,5 +1,5 @@
 """
-🏴‍☠️ Гарант-бот: безопасные сделки, бланки резюме и система арбитража.
+🏴‍☠️ Гарант-бот: безопасные сделки, бланки резюме, система арбитража и Inline-интерфейс.
 """
 
 import asyncio
@@ -20,9 +20,7 @@ try:
         FSInputFile,
         InlineKeyboardButton,
         InlineKeyboardMarkup,
-        KeyboardButton,
         InputMediaPhoto,
-        ReplyKeyboardMarkup,
     )
     from aiohttp import web
 
@@ -55,7 +53,6 @@ PROFANITY_WORDS = [
     "твоя", "иди", "соси", "хз", "зачем", "просто", "зач", "нет"
 ]
 
-# Глобальный счетчик для отправки отзывов строго по очереди
 CURRENT_REVIEW_INDEX = 0
 
 
@@ -69,21 +66,25 @@ class IdeaState(StatesGroup):
     waiting_for_idea = State()
 
 
-def main_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Отзывы 🖤")],
+# ──────────────────────── KEYBOARDS (INLINE) ─────────────────────────────
+def main_inline_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
-                KeyboardButton(text="🔍 Найти гаранта в сети"),
-                KeyboardButton(text="📄 Сделать резюме сделки"),
+                InlineKeyboardButton(text="🔍 Найти гаранта в сети", callback_data="btn_find_guarantor"),
             ],
             [
-                KeyboardButton(text="🛡️ Поддержка"),
-                KeyboardButton(text="⚙️ In progress... ⛓️"),
+                InlineKeyboardButton(text="📄 Сделать резюме сделки", callback_data="btn_make_deal"),
+                InlineKeyboardButton(text="🖤 Отзывы", callback_data="btn_reviews"),
             ],
-        ],
-        resize_keyboard=True,
-        input_field_placeholder="🌑 Выберите действие…",
+            [
+                InlineKeyboardButton(text="📜 Правила сервиса", callback_data="btn_rules"),
+                InlineKeyboardButton(text="💡 Идея (/idea)", callback_data="btn_idea_trigger"),
+            ],
+            [
+                InlineKeyboardButton(text="🆘 Поддержка / Арбитраж", url=f"https://t.me/{SUPPORT_USERNAME}"),
+            ]
+        ]
     )
 
 
@@ -102,36 +103,47 @@ async def notify_admin_action(bot: Bot, user: types.User, action_text: str):
         logging.error(f"Ошибка логирования админу: {e}")
 
 
+# ──────────────────────── HANDLERS ──────────────────────────────
 async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
     await state.clear()
     await notify_admin_action(bot, message.from_user, "Команда /start или Сброс")
-    await message.answer(
-        "🕷️ <b>ЭТОТ БОТ ТВОРЕНИЕ БОЖЬЕ</b>\n\n"
-        "✔️ <b>Заменяет @codcry во всех смыслах</b> ✔️\n\n"
-        "—————————————————-\n"
-        "🖤 created by @codcry: @jonnkq\n"
-        "—————————————————-\n\n"
-        "⚡️ <b>Правила строгие. Защита активна.</b>\n\n"
-        f"💬 Нужны отзывы? — @{SUPPORT_USERNAME}\n\n"
-        "⚖️ <b>Доступные модули:</b>\n"
-        "_________________________________________\n\n"
-        "🔍 <b>Найти гаранта в сети</b> — запуск поиска свободного гаранта.\n\n"
-        "📄 <b>Сделать резюме сделки</b> — +50% к ускорению поиска гаранта.\n\n"
-        "🛡️ <b>Поддержка</b> — прямой канал с администрацией.\n\n"
-        "⚙️ <b>In progress...</b> — вектор развития и предложений.\n",
-        parse_mode="HTML",
-        reply_markup=main_kb(),
+
+    first_name = message.from_user.first_name or "Пользователь"
+    
+    caption_text = (
+        f"🕷️ <b>Приветствую, {first_name}! ;()</b>\n"
+        f"<i>Это теневой гарант-сервис безопасных сделок.</i>\n\n"
+        f"🥀 🥀 🥀\n"
+        f"<b>Что умеет бот:</b>\n"
+        f" 🕯 <i>Автоматический подбор свободных гарантов</i>\n"
+        f" 🕯 <i>Составление ускоренных резюме сделок</i>\n"
+        f" 🕯 <i>Проверенная система отзывов и арбитража</i>\n\n"
+        f"🔐 <i>Перед началом работы ознакомьтесь с правилами сервиса.</i> #\n\n"
+        f"🆘 Поддержка: @{SUPPORT_USERNAME}\n"
+        f"<i>Используя бота, вы автоматически принимаете регламент сервиса.</i> ;()"
     )
+
+    # Проверяем наличие баннера на сервере, если нет — отправляем просто текст
+    if os.path.exists("banner.jpg"):
+        photo = FSInputFile("banner.jpg")
+        await message.answer_photo(
+            photo=photo,
+            caption=caption_text,
+            parse_mode="HTML",
+            reply_markup=main_inline_kb()
+        )
+    else:
+        await message.answer(
+            text=caption_text,
+            parse_mode="HTML",
+            reply_markup=main_inline_kb()
+        )
 
 
 def get_all_reviews():
-    """Динамически собирает и группирует все картинки с префиксом rep"""
-    # Удаленный файл rep13 исключен
     all_files = [f for f in os.listdir('.') if f.startswith('rep') and f.lower().endswith(('.png', '.jpg', '.jpeg')) and 'rep13' not in f]
-    
     groups = {}
     for filename in sorted(all_files):
-        # Находим основной номер отзыва (например rep1 из rep1_part1_png.jpg)
         match = re.match(r"(rep\d+)", filename)
         if match:
             group_key = match.group(1)
@@ -145,7 +157,6 @@ def get_all_reviews():
     for group_key in sorted(groups.keys()):
         files = sorted(groups[group_key])
         if len(files) > 1:
-            # Если частей несколько — формируем альбом
             media_group = [
                 InputMediaPhoto(media=FSInputFile(files[0]), caption="🖤 <b>Реальный отзыв о сделке ;()</b> #", parse_mode="HTML")
             ]
@@ -153,48 +164,74 @@ def get_all_reviews():
                 media_group.append(InputMediaPhoto(media=FSInputFile(f)))
             reviews_list.append(media_group)
         elif len(files) == 1:
-            # Одиночный отзыв
             reviews_list.append(FSInputFile(files[0]))
             
     return reviews_list
 
 
-async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bot):
+async def cb_reviews_handler(call: types.CallbackQuery, bot: Bot):
     global CURRENT_REVIEW_INDEX
-    await notify_admin_action(bot, message.from_user, "Запросил отзывы (Отзывы 🖤)")
+    await call.answer()
+    await notify_admin_action(bot, call.from_user, "Запросил отзывы (🖤 Отзывы)")
     
     reviews_library = get_all_reviews()
     
     if not reviews_library:
-        await message.answer("⚠️ <b>Отзывы пока недоступны.</b> ;() #", parse_mode="HTML")
+        await call.message.answer("⚠️ <b>Отзывы пока недоступны.</b> ;() #", parse_mode="HTML")
         return
 
-    # Берем текущий отзыв по индексу
     current_review = reviews_library[CURRENT_REVIEW_INDEX % len(reviews_library)]
-    
-    # Переходим к следующему отзыву по очереди
     CURRENT_REVIEW_INDEX = (CURRENT_REVIEW_INDEX + 1) % len(reviews_library)
     
     try:
         if isinstance(current_review, list):
-            # Отправка альбомом (все части part)
-            await message.answer_media_group(media=current_review)
+            await call.message.answer_media_group(media=current_review)
         else:
-            # Отправка одиночного фото
-            await message.answer_photo(
+            await call.message.answer_photo(
                 photo=current_review,
                 caption="🖤 <b>Реальный отзыв о работе гаранта ;()</b> #",
                 parse_mode="HTML"
             )
     except Exception as e:
         logging.error(f"Ошибка отправки отзыва: {e}")
-        await message.answer("⚠️ <b>Не удалось загрузить данный отзыв.</b> ;() #", parse_mode="HTML")
+        await call.message.answer("⚠️ <b>Не удалось загрузить данный отзыв.</b> ;() #", parse_mode="HTML")
 
 
-async def cmd_make_deal(message: types.Message, state: FSMContext, bot: Bot):
-    await notify_admin_action(bot, message.from_user, "Создание резюме сделки")
+# ── Раздел Правила ─────────────────────────────────────────
+async def cb_rules_handler(call: types.CallbackQuery, bot: Bot):
+    await call.answer()
+    await notify_admin_action(bot, call.from_user, "Открыл правила сервиса")
+    
+    rules_text = (
+        "📜 <b>ПРАВИЛА И РЕГЛАМЕНТ СЕРВИСА ;()</b>\n\n"
+        "1. <b>Безопасность сделки:</b> Все финансовые операции проводятся строго через официальных гарантов сервиса. #\n"
+        "2. <b>Фейки и подделки:</b> Всегда сверяйте юзернейм гаранта в диалоге! Единственный логин поддержки — @codcry. ✔️\n"
+        "3. <b>Комиссия:</b> Комиссия гаранта фиксируется до начала проведения сделки. ;()\n"
+        "4. <b>Запрещенные действия:</b> Оскорбления, спам, попытка обмана или использование нецензурной лексики в бланке ведут к блокировке. 🖤\n"
+        "5. <b>Арбитраж:</b> Все споры решаются исключительно через официальную поддержку / арбитраж бота.\n\n"
+        "<i>Соблюдение правил гарантирует 100% безопасность ваших средств.</i> 🕷️"
+    )
+    
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="« Назад в меню", callback_data="btn_back_to_main")]
+        ]
+    )
+    
+    await call.message.answer(rules_text, parse_mode="HTML", reply_markup=kb)
+
+
+async def cb_back_to_main(call: types.CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await cmd_start(call.message, state, bot)
+
+
+# ── Бланк резюме сделки ────────────────────────────────────
+async def cb_make_deal(call: types.CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await notify_admin_action(bot, call.from_user, "Создание резюме сделки")
     await state.set_state(DealState.waiting_for_deal_form)
-    await message.answer(
+    await call.message.answer(
         "📄 <b>Заполните бланк сделки ;()</b>\n\n"
         "Отправьте одним сообщением данные строго по пунктам:\n\n"
         "1) Юзы покупателя и продавца (через @)\n"
@@ -202,8 +239,7 @@ async def cmd_make_deal(message: types.Message, state: FSMContext, bot: Bot):
         "3) Валюта сделки\n"
         "4) Суть сделки\n\n"
         "<i>(Заполните все 4 пункта, без нецензурной лексики и лишнего шума).</i> #",
-        parse_mode="HTML",
-        reply_markup=main_kb(),
+        parse_mode="HTML"
     )
 
 
@@ -234,27 +270,30 @@ async def process_deal_form(message: types.Message, state: FSMContext, bot: Bot)
     await state.update_data(saved_deal_summary=text)
     await state.set_state(None)
     await notify_admin_action(bot, message.from_user, "Успешно заполнено резюме сделки")
+    
     await message.answer(
         "✅ <b>Резюме зафиксировано! ✔️</b>\n\n"
         "Теперь при поиске гарантирован приоритетный отклик гарантов. 🕷️",
         parse_mode="HTML",
-        reply_markup=main_kb(),
+        reply_markup=main_inline_kb()
     )
 
 
-async def cmd_guarantor(message: types.Message, state: FSMContext, bot: Bot):
-    await notify_admin_action(bot, message.from_user, "Запрос на поиск гаранта")
+# ── Поиск гаранта ────────────────────────────────────────
+async def cb_find_guarantor(call: types.CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await notify_admin_action(bot, call.from_user, "Запрос на поиск гаранта")
     user_data = await state.get_data()
     deal_summary = user_data.get("saved_deal_summary")
 
     if not deal_summary:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Создать резюме сделки✔️", callback_data="go_make_summary")],
+                [InlineKeyboardButton(text="Создать резюме сделки✔️", callback_data="cb_go_make_summary")],
                 [InlineKeyboardButton(text="Забить ✖️", callback_data="cancel_search")],
             ]
         )
-        await message.answer(
+        await call.message.answer(
             "💡 <b>Внимание ;()</b>\n\n"
             "У вас отсутствует заполненное резюме сделки. Для безопасного поиска советуем оформить бланк! #",
             parse_mode="HTML",
@@ -262,7 +301,7 @@ async def cmd_guarantor(message: types.Message, state: FSMContext, bot: Bot):
         )
         return
 
-    await run_guarantor_search(message, bot)
+    await run_guarantor_search(call.message, bot, call.from_user)
 
 
 async def cb_go_make_summary(call: types.CallbackQuery, state: FSMContext, bot: Bot):
@@ -285,8 +324,8 @@ async def cb_cancel_search(call: types.CallbackQuery, bot: Bot):
     await call.message.edit_text("🌑 <b>Поиск гаранта отменен.</b> #", parse_mode="HTML")
 
 
-async def run_guarantor_search(message: types.Message, bot: Bot):
-    await notify_admin_action(bot, message.from_user, "Старт процесса поиска в сети")
+async def run_guarantor_search(message: types.Message, bot: Bot, user: types.User):
+    await notify_admin_action(bot, user, "Старт процесса поиска в сети")
     total_duration = random.randint(15, 25)
     msg = await message.answer("🤖 <b>Инициализация поиска…</b> ;()", parse_mode="HTML")
 
@@ -326,22 +365,7 @@ async def run_guarantor_search(message: types.Message, bot: Bot):
     )
 
 
-async def cmd_in_progress(message: types.Message, bot: Bot):
-    await notify_admin_action(bot, message.from_user, "Открыл раздел In Progress")
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💡 Предложить идею (/idea)", callback_data="btn_idea_trigger")]
-        ]
-    )
-    await message.answer(
-        "⚙️ <b>Мы растем, бот развивается!</b> ;()\n\n"
-        "Мы работаем не покладая рук, и даже больше. ⚔️\n\n"
-        "Вы можете предложить идею написав /idea #\n",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-
-
+# ── Идеи ──────────────────────────────────────────────
 async def cb_idea_trigger(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
     await state.set_state(IdeaState.waiting_for_idea)
@@ -379,25 +403,10 @@ async def process_idea_text(message: types.Message, state: FSMContext, bot: Bot)
     except Exception as e:
         logging.error(f"Не удалось переслать идею админу: {e}")
 
-    await message.answer("идея подана на рассмотрение ✔️", reply_markup=main_kb())
+    await message.answer("идея подана на рассмотрение ✔️", reply_markup=main_inline_kb())
 
 
-async def cmd_support(message: types.Message, state: FSMContext, bot: Bot):
-    await state.clear()
-    await notify_admin_action(bot, message.from_user, "Запросил Поддержку")
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"💬 Обратиться к @{SUPPORT_USERNAME}", url=f"https://t.me/{SUPPORT_USERNAME}")]
-        ]
-    )
-    await message.answer(
-        f"🛡️ <b>Арбитраж / Поддержка</b> ;()\n\n"
-        f"Прямой канал связи с администрацией: @{SUPPORT_USERNAME}. #",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-
-
+# ── Жалоба на гаранта ──────────────────────────────────
 async def cb_report_guarantor(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     guarantor_name = call.data.split(":")[-1]
     await state.update_data(
@@ -435,7 +444,7 @@ async def process_report_reason(message: types.Message, state: FSMContext, bot: 
 
     await message.answer(
         "✅ <b>Жалоба отправлена.</b> Администрация рассмотрит обращение в ближайшее время. ✔️",
-        reply_markup=main_kb(),
+        reply_markup=main_inline_kb(),
     )
 
 
@@ -461,6 +470,7 @@ async def start_web_server():
     print(f">>> 🌐 Веб-сервер активен на порту {port}")
 
 
+# ──────────────────────── MAIN ────────────────────────────
 async def main():
     print(">>> ⚔️ ИНИЦИАЛИЗАЦИЯ БОТА И ДИСПЕТЧЕРА...")
     logging.basicConfig(level=logging.INFO)
@@ -468,24 +478,27 @@ async def main():
     bot = Bot(TG_BOT_TOKEN)
     dp = Dispatcher()
 
+    # FSM
     dp.message.register(process_deal_form, StateFilter(DealState.waiting_for_deal_form))
     dp.message.register(process_report_reason, StateFilter(ReportState.waiting_for_report_reason))
     dp.message.register(process_idea_text, StateFilter(IdeaState.waiting_for_idea))
 
+    # Команды
     dp.message.register(cmd_start, Command("start"))
-    dp.message.register(btn_reviews_handler, F.text == "Отзывы 🖤")
-
-    dp.message.register(cmd_guarantor, F.text == "🔍 Найти гаранта в сети")
-    dp.message.register(cmd_make_deal, F.text == "📄 Сделать резюме сделки")
-    dp.message.register(cmd_support, F.text == "🛡️ Поддержка")
-    dp.message.register(cmd_in_progress, F.text == "⚙️ In progress... ⛓️")
     dp.message.register(cmd_idea, Command("idea"))
 
-    dp.callback_query.register(cb_go_make_summary, F.data == "go_make_summary")
+    # Инлайн-обработчики
+    dp.callback_query.register(cb_reviews_handler, F.data == "btn_reviews")
+    dp.callback_query.register(cb_rules_handler, F.data == "btn_rules")
+    dp.callback_query.register(cb_back_to_main, F.data == "btn_back_to_main")
+    dp.callback_query.register(cb_find_guarantor, F.data == "btn_find_guarantor")
+    dp.callback_query.register(cb_make_deal, F.data == "btn_make_deal")
+    dp.callback_query.register(cb_go_make_summary, F.data == "cb_go_make_summary")
     dp.callback_query.register(cb_cancel_search, F.data == "cancel_search")
     dp.callback_query.register(cb_idea_trigger, F.data == "btn_idea_trigger")
     dp.callback_query.register(cb_report_guarantor, F.data.startswith("report:"))
 
+    # Перехват любого текста
     dp.message.register(handle_random_text, F.text)
 
     await start_web_server()
