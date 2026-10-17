@@ -21,6 +21,7 @@ try:
         InlineKeyboardButton,
         InlineKeyboardMarkup,
         KeyboardButton,
+        InputMediaPhoto,
         ReplyKeyboardMarkup,
     )
     from aiohttp import web
@@ -53,6 +54,9 @@ PROFANITY_WORDS = [
     "хуесос", "шлюха", "уеб", "блять", "нахуй", "похуй", "залупа", "мама",
     "твоя", "иди", "соси", "хз", "зачем", "просто", "зач", "нет"
 ]
+
+# Глобальный счетчик для отправки отзывов строго по очереди без повторов
+CURRENT_REVIEW_INDEX = 0
 
 
 class DealState(StatesGroup):
@@ -121,39 +125,51 @@ async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
 
 
 async def btn_reviews_handler(message: types.Message, state: FSMContext, bot: Bot):
+    global CURRENT_REVIEW_INDEX
     await notify_admin_action(bot, message.from_user, "Запросил отзывы (Отзывы 🖤)")
     
-    # Список возможных файлов (поддерживаем и .jpg, и .png на всякий случай)
-    candidates = [
-        "rep5.jpg", "rep6.jpg", "rep7.jpg", "rep8.jpg", "rep9.jpg",
-        "rep10.jpg", "rep11.jpg", "rep12.jpg", "rep13.jpg", "rep1_part1_png.jpg",
-        "rep5.png", "rep6.png", "rep7.png", "rep8.png", "rep9.png",
-        "rep10.png", "rep11.png", "rep12.png", "rep13.png", "rep1_part1_png.png"
+    # Структура отзывов: каждый элемент списка — это отдельный отзыв.
+    # Он может содержать как один файл, так и несколько частей (альбом).
+    # Здесь прописаны твои группы файлов (rep1 с part1 и part2, а также остальные одиночные файлы).
+    reviews_library = [
+        # Отзыв 1 (состоит из двух частей альбома)
+        [
+            InputMediaPhoto(media=FSInputFile("rep1_part1.png"), caption="🖤 <b>Реальный отзыв о сделке ;()</b> #"),
+            InputMediaPhoto(media=FSInputFile("rep1_part2.png"))
+        ],
+        # Остальные одиночные отзывы (проверь расширения .jpg или .png и поправь при необходимости)
+        FSInputFile("rep5.jpg"),
+        FSInputFile("rep6.jpg"),
+        FSInputFile("rep7.jpg"),
+        FSInputFile("rep8.jpg"),
+        FSInputFile("rep9.jpg"),
+        FSInputFile("rep10.jpg"),
+        FSInputFile("rep11.jpg"),
+        FSInputFile("rep12.jpg"),
+        FSInputFile("rep13.jpg"),
     ]
     
-    # Ищем первый попавшийся реально существующий файл на сервере
-    existing_files = [f for f in candidates if os.path.exists(f)]
+    # Берем текущий отзыв по индексу
+    current_review = reviews_library[CURRENT_REVIEW_INDEX]
     
-    if not existing_files:
-        await message.answer(
-            "⚠️ <b>Файлы отзывов пока не обнаружены в репозитории на сервере.</b> ;() #",
-            parse_mode="HTML"
-        )
-        return
-        
-    chosen_file = random.choice(existing_files)
+    # Перемещаем указатель на следующий отзыв по кругу (когда дойдет до конца, начнется сначала)
+    CURRENT_REVIEW_INDEX = (CURRENT_REVIEW_INDEX + 1) % len(reviews_library)
     
     try:
-        photo_file = FSInputFile(chosen_file)
-        await message.answer_photo(
-            photo=photo_file,
-            caption="🖤 <b>Реальный отзыв о работе гаранта ;()</b> #",
-            parse_mode="HTML"
-        )
+        if isinstance(current_review, list):
+            # Отправка альбома (несколько частей разом)
+            await message.answer_media_group(media=current_review)
+        else:
+            # Отправка одиночного файла
+            await message.answer_photo(
+                photo=current_review,
+                caption="🖤 <b>Реальный отзыв о работе гаранта ;()</b> #",
+                parse_mode="HTML"
+            )
     except Exception as e:
-        logging.error(f"Ошибка отправки файла отзыва {chosen_file}: {e}")
+        logging.error(f"Ошибка отправки отзыва: {e}")
         await message.answer(
-            "⚠️ <b>Не удалось отправить файл отзыва.</b> ;() #",
+            "⚠️ <b>Файл отзыва временно недоступен на сервере.</b> ;() #",
             parse_mode="HTML"
         )
 
